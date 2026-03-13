@@ -40,8 +40,8 @@ Follow these steps to run the application locally:
 ### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/CS_Student_Career_Prediction.git
-cd CS_Student_Career_Prediction
+git clone https://github.com/Hassanezz11/prediction-path.git
+cd prediction-path
 ```
 
 ### Step 2: Create Virtual Environment

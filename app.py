@@ -3,6 +3,9 @@ import joblib
 import numpy as np
 import pandas as pd
 import os
+import io
+import requests
+from pypdf import PdfReader
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -197,6 +200,44 @@ def get_courses_for_gap(predicted, preferred, n=8):
     matched = matched.sort_values("rating", ascending=False)
     return matched.head(n)
 
+# ── CV analyzer helpers ────────────────────────────────────────────────────────
+def extract_pdf_text(uploaded_file) -> str:
+    reader = PdfReader(io.BytesIO(uploaded_file.read()))
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+def analyze_cv(cv_text: str, model: str = "llama3.2") -> str:
+    prompt = f"""You are an academic advisor for a Computer Science school that offers three specialization branches:
+
+- IADATA — Intelligence Artificielle & Data (AI, Machine Learning, Deep Learning, Data Science, NLP, Computer Vision)
+- DSI — Développement des Systèmes d'Information (Web development, Software engineering, Mobile apps, Databases, DevOps)
+- CIR — Cybersécurité, Infrastructure & Réseaux (Networks, Cybersecurity, Systems administration, Infrastructure, Ethical hacking)
+
+Analyze the student CV below. Focus only on their projects and technical skills.
+
+Reply in this exact format:
+**Recommended Branch:** <IADATA | DSI | CIR>
+**Confidence:** <High | Medium | Low>
+
+**Key evidence from CV:**
+- <bullet 1>
+- <bullet 2>
+- <bullet 3>
+
+**Justification:** <2–3 sentences explaining why this branch fits the student>
+
+**To strengthen another branch, the student should work on:** <one sentence>
+
+---
+CV:
+{cv_text[:4000]}"""
+    response = requests.post(
+        "http://localhost:11434/api/generate",
+        json={"model": model, "prompt": prompt, "stream": False},
+        timeout=120,
+    )
+    response.raise_for_status()
+    return response.json()["response"]
+
 # ── Semester definitions (key → display label) ─────────────────────────────────
 SEMESTERS = {
     "S1": {
@@ -332,137 +373,176 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ── Form ───────────────────────────────────────────────────────────────────────
-with st.form("prediction_form"):
+# ── Top-level tabs ────────────────────────────────────────────────────────────
+tab_grades, tab_cv = st.tabs(["Grade Predictor", "CV Analyzer"])
 
-    # Personal Info
-    st.markdown('<p class="section-label">Personal Information</p>', unsafe_allow_html=True)
-    pi1, pi2, pi3 = st.columns([1, 1, 1])
-    with pi1:
-        gender = st.selectbox("Gender", options=GENDER_CLASSES, key="gender")
-    with pi2:
-        age = st.number_input("Age", min_value=17, max_value=35, value=21, step=1, key="age")
-    with pi3:
-        preferred_branch = st.selectbox(
-            "Preferred Branch",
-            options=BRANCH_OPTIONS,
-            format_func=lambda b: f"{b} — {BRANCH_META[b]['full']}",
-            key="preferred_branch",
-            help="The branch you are most interested in. Only used for gap analysis.",
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 1 — Grade Predictor
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_grades:
+    with st.form("prediction_form"):
+
+        # Personal Info
+        st.markdown('<p class="section-label">Personal Information</p>', unsafe_allow_html=True)
+        pi1, pi2, pi3 = st.columns([1, 1, 1])
+        with pi1:
+            gender = st.selectbox("Gender", options=GENDER_CLASSES, key="gender")
+        with pi2:
+            age = st.number_input("Age", min_value=17, max_value=35, value=21, step=1, key="age")
+        with pi3:
+            preferred_branch = st.selectbox(
+                "Preferred Branch",
+                options=BRANCH_OPTIONS,
+                format_func=lambda b: f"{b} — {BRANCH_META[b]['full']}",
+                key="preferred_branch",
+                help="The branch you are most interested in. Only used for gap analysis.",
+            )
+
+        st.markdown('<p class="section-label" style="margin-top:20px;">Module Grades — out of 20</p>', unsafe_allow_html=True)
+
+        tab_labels = [f"S{i}" for i in range(1, 8)]
+        tabs = st.tabs(tab_labels)
+        grade_inputs: dict[str, float] = {}
+
+        for tab_obj, (sem_key, sem_info) in zip(tabs, SEMESTERS.items()):
+            with tab_obj:
+                st.caption(sem_info["title"])
+                modules = sem_info["modules"]
+                mid = (len(modules) + 1) // 2
+                col_left, col_right = st.columns(2)
+                for idx, (feat_key, label, coef) in enumerate(modules):
+                    col = col_left if idx < mid else col_right
+                    with col:
+                        grade_inputs[feat_key] = st.number_input(
+                            f"{label}  *(coef {coef})*",
+                            min_value=0.0,
+                            max_value=20.0,
+                            value=12.0,
+                            step=0.25,
+                            key=feat_key,
+                        )
+
+        st.markdown("")
+        submitted = st.form_submit_button(
+            "Predict My Branch",
+            use_container_width=True,
+            type="primary",
         )
 
-    st.markdown('<p class="section-label" style="margin-top:20px;">Module Grades — out of 20</p>', unsafe_allow_html=True)
+    # ── Prediction ────────────────────────────────────────────────────────────
+    if submitted:
+        feature_values = {"Gender": GENDER_MAP[gender], "Age": age}
+        feature_values.update(grade_inputs)
+        features = np.array([[feature_values[f] for f in FEATURE_NAMES]])
 
-    # One tab per semester
-    tab_labels = [f"S{i}" for i in range(1, 8)]
-    tabs = st.tabs(tab_labels)
-    grade_inputs: dict[str, float] = {}
+        prediction    = model.predict(features)[0]
+        probabilities = model.predict_proba(features)[0].astype(float)
+        classes       = list(model.classes_)
 
-    for tab_obj, (sem_key, sem_info) in zip(tabs, SEMESTERS.items()):
-        with tab_obj:
-            st.caption(sem_info['title'])
-            modules = sem_info["modules"]
-            mid = (len(modules) + 1) // 2
-            col_left, col_right = st.columns(2)
-            for idx, (feat_key, label, coef) in enumerate(modules):
-                col = col_left if idx < mid else col_right
-                with col:
-                    grade_inputs[feat_key] = st.number_input(
-                        f"{label}  *(coef {coef})*",
-                        min_value=0.0,
-                        max_value=20.0,
-                        value=12.0,
-                        step=0.25,
-                        key=feat_key,
-                    )
+        meta    = BRANCH_META[prediction]
+        css_cls = meta["css"]
 
-    st.markdown("")
-    submitted = st.form_submit_button(
-        "Predict My Branch",
-        use_container_width=True,
-        type="primary",
-    )
-
-# ── Prediction ────────────────────────────────────────────────────────────────
-if submitted:
-    feature_values = {"Gender": GENDER_MAP[gender], "Age": age}
-    feature_values.update(grade_inputs)
-    features = np.array([[feature_values[f] for f in FEATURE_NAMES]])
-
-    prediction    = model.predict(features)[0]
-    probabilities = model.predict_proba(features)[0].astype(float)
-    classes       = list(model.classes_)
-
-    meta    = BRANCH_META[prediction]
-    css_cls = meta["css"]
-
-    st.markdown("---")
-
-    st.markdown(
-        f"""
-        <div class="result-card {css_cls}">
-          <div class="rc-tag">Recommended Branch</div>
-          <div class="rc-branch">{prediction}</div>
-          <div class="rc-full">{meta['full']}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.markdown(meta["description"])
-
-    st.markdown("---")
-    st.markdown("#### Model Confidence")
-    sorted_preds = sorted(zip(classes, probabilities), key=lambda x: -x[1])
-
-    bar_colors = {"IADATA": "#2563eb", "DSI": "#16a34a", "CIR": "#dc2626"}
-    for branch, prob in sorted_preds:
-        pct = prob * 100
-        color = bar_colors.get(branch, "#64748b")
+        st.markdown("---")
         st.markdown(
             f"""
-            <div class="conf-wrap">
-              <div class="conf-head">
-                <span class="conf-name">{branch}</span>
-                <span class="conf-pct">{pct:.1f}%</span>
-              </div>
-              <div class="conf-track">
-                <div class="conf-fill" style="width:{pct:.1f}%; background:{color};"></div>
-              </div>
+            <div class="result-card {css_cls}">
+              <div class="rc-tag">Recommended Branch</div>
+              <div class="rc-branch">{prediction}</div>
+              <div class="rc-full">{meta['full']}</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
+        st.markdown(meta["description"])
 
-    st.markdown("---")
-    if prediction == preferred_branch:
-        st.success(
-            f"**Perfect Match!**  \n"
-            f"Your academic profile already aligns with **{preferred_branch} — "
-            f"{BRANCH_META[preferred_branch]['full']}**. Keep it up!"
-        )
-    else:
-        st.warning(
-            f"**Gap Analysis**  \n"
-            f"Your grades point toward **{prediction}**, but your preferred branch is "
-            f"**{preferred_branch}**. Here are the courses we recommend to bridge that gap:"
-        )
-        courses = get_courses_for_gap(prediction, preferred_branch)
-        if not courses.empty:
-            udemy_base = "https://www.udemy.com"
-            for i, row in enumerate(courses.itertuples(), start=1):
-                course_url = udemy_base + row.url if str(row.url).startswith("/") else row.url
-                with st.expander(f"{i}.  {row.title}"):
-                    col_img, col_info = st.columns([1, 3])
-                    with col_img:
-                        st.image(row.image, use_container_width=True)
-                    with col_info:
-                        st.markdown(f"**Rating:** {row.rating:.2f} ⭐  |  **Reviews:** {int(row.num_reviews):,}  |  **Duration:** {row.duration}")
-                        st.markdown(f"**Lectures:** {int(row.num_published_lectures)}  |  **Last updated:** {str(row.last_update_date)[:10]}")
-                        st.markdown(f"[Open on Udemy]({course_url})", unsafe_allow_html=False)
+        st.markdown("---")
+        st.markdown("#### Model Confidence")
+        sorted_preds = sorted(zip(classes, probabilities), key=lambda x: -x[1])
+        bar_colors = {"IADATA": "#2563eb", "DSI": "#16a34a", "CIR": "#dc2626"}
+        for branch, prob in sorted_preds:
+            pct = prob * 100
+            color = bar_colors.get(branch, "#64748b")
+            st.markdown(
+                f"""
+                <div class="conf-wrap">
+                  <div class="conf-head">
+                    <span class="conf-name">{branch}</span>
+                    <span class="conf-pct">{pct:.1f}%</span>
+                  </div>
+                  <div class="conf-track">
+                    <div class="conf-fill" style="width:{pct:.1f}%; background:{color};"></div>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        st.markdown("---")
+        if prediction == preferred_branch:
+            st.success(
+                f"**Perfect Match!**  \n"
+                f"Your academic profile already aligns with **{preferred_branch} — "
+                f"{BRANCH_META[preferred_branch]['full']}**. Keep it up!"
+            )
         else:
-            st.info("No matching courses found in the catalogue.")
+            st.warning(
+                f"**Gap Analysis**  \n"
+                f"Your grades point toward **{prediction}**, but your preferred branch is "
+                f"**{preferred_branch}**. Here are the courses we recommend to bridge that gap:"
+            )
+            courses = get_courses_for_gap(prediction, preferred_branch)
+            if not courses.empty:
+                udemy_base = "https://www.udemy.com"
+                for i, row in enumerate(courses.itertuples(), start=1):
+                    course_url = udemy_base + row.url if str(row.url).startswith("/") else row.url
+                    with st.expander(f"{i}.  {row.title}"):
+                        col_img, col_info = st.columns([1, 3])
+                        with col_img:
+                            st.image(row.image, use_container_width=True)
+                        with col_info:
+                            st.markdown(f"**Rating:** {row.rating:.2f} ⭐  |  **Reviews:** {int(row.num_reviews):,}  |  **Duration:** {row.duration}")
+                            st.markdown(f"**Lectures:** {int(row.num_published_lectures)}  |  **Last updated:** {str(row.last_update_date)[:10]}")
+                            st.markdown(f"[Open on Udemy]({course_url})", unsafe_allow_html=False)
+            else:
+                st.info("No matching courses found in the catalogue.")
 
-    for tmp in ("_temp_cols.json", "_temp_cols2.json",
-                "_temp_info.json", "_temp_indexed_cols.json"):
-        if os.path.exists(tmp):
-            os.remove(tmp)
+        for tmp in ("_temp_cols.json", "_temp_cols2.json",
+                    "_temp_info.json", "_temp_indexed_cols.json"):
+            if os.path.exists(tmp):
+                os.remove(tmp)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 2 — CV Analyzer
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_cv:
+    st.markdown('<p class="section-label">CV / Resume Analyzer — powered by Ollama (local AI)</p>', unsafe_allow_html=True)
+    st.write(
+        "Upload your CV as a PDF. The analyzer reads your **projects and skills** "
+        "and recommends the best branch — runs **100% locally**, no API key needed."
+    )
+
+    ollama_model = st.selectbox(
+        "Ollama model",
+        options=["llama3.2", "mistral", "gemma2", "llama3.1"],
+        help="Must be pulled first: e.g. `ollama pull llama3.2`",
+    )
+    uploaded_cv = st.file_uploader("Upload CV (PDF)", type=["pdf"])
+
+    if st.button("Analyze CV", type="primary", use_container_width=True):
+        if uploaded_cv is None:
+            st.error("Please upload a PDF file.")
+        else:
+            with st.spinner(f"Analyzing with {ollama_model} — this may take 20–60 seconds..."):
+                try:
+                    cv_text = extract_pdf_text(uploaded_cv)
+                    if not cv_text.strip():
+                        st.error("Could not extract text from this PDF. Make sure it is not a scanned image.")
+                    else:
+                        result = analyze_cv(cv_text, ollama_model)
+                        st.markdown("---")
+                        st.markdown("### Analysis Result")
+                        st.markdown(result)
+                except requests.exceptions.ConnectionError:
+                    st.error("Cannot connect to Ollama. Make sure it is running (`ollama serve`) and the model is pulled (`ollama pull llama3.2`).")
+                except Exception as e:
+                    st.error(f"Error: {e}")

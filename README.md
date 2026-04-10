@@ -82,6 +82,7 @@ This will generate the model files (`CS_students_career_predictor.pkl` and `mode
 
 ```bash
 streamlit run app.py
+.\myenv\Scripts\python.exe -m streamlit run app.py
 ```
 
 The app will open in your default web browser at `http://localhost:8501`.

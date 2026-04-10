@@ -1,6 +1,8 @@
 import streamlit as st
 import joblib
 import numpy as np
+import pandas as pd
+import os
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -145,63 +147,55 @@ BRANCH_META = {
     },
 }
 
-# ── Course recommendations ─────────────────────────────────────────────────────
-COURSE_RECOMMENDATIONS = {
+# ── Course recommendations — loaded from CSV ───────────────────────────────────
+@st.cache_data
+def load_courses():
+    df = pd.read_csv("courses.csv")
+    df["title_lower"] = df["title"].str.lower()
+    return df
+
+COURSES_DF = load_courses()
+
+# Keywords that map each branch gap to relevant course titles
+GAP_KEYWORDS = {
     ("IADATA", "DSI"): [
-        ("Full-Stack Web Development", "Master HTML/CSS/JS and a framework (React, Vue) plus a backend (Django, Spring Boot)."),
-        ("Object-Oriented Design & Patterns", "Study SOLID principles, MVC, and common design patterns in Java or Python."),
-        ("Databases & SQL", "Deepen relational DB skills: PostgreSQL, MySQL, stored procedures, and ORM tools."),
-        ("DevOps & CI/CD", "Learn Docker, GitHub Actions, Kubernetes basics, and cloud deployment."),
-        ("Mobile App Development", "Pick up Flutter or React Native to build cross-platform applications."),
-        ("Software Architecture", "Explore microservices, REST APIs, and event-driven architectures."),
-        ("Agile & Project Management", "Practice Scrum, Kanban, and version control workflows with Git."),
+        "web", "javascript", "react", "node", "java", "spring", "sql",
+        "database", "docker", "mobile", "flutter", "angular", "vue",
+        "backend", "fullstack", "full-stack", "devops", "kubernetes",
     ],
     ("IADATA", "CIR"): [
-        ("Network Security Fundamentals", "Study TCP/IP, firewalls, VPNs, IDS/IPS, and network architecture."),
-        ("Ethical Hacking & Penetration Testing", "Practice with Kali Linux, Metasploit, Burp Suite, and Nmap."),
-        ("Cryptography & PKI", "Learn symmetric/asymmetric encryption, hashing algorithms, TLS, and certificates."),
-        ("Linux & System Administration", "Get fluent in Linux CLI, shell scripting, permissions, and services."),
-        ("OWASP Top 10 & Web Security", "Understand the critical web vulnerabilities and secure coding practices."),
-        ("Digital Forensics & Incident Response", "Study evidence collection, memory analysis, and log investigation."),
-        ("Security Certifications", "Target CompTIA Security+, CEH, or eJPT as entry-level certifications."),
+        "security", "hacking", "network", "linux", "cyber", "cryptography",
+        "penetration", "forensics", "kali", "ethical", "firewall", "comptia",
     ],
     ("DSI", "IADATA"): [
-        ("Linear Algebra & Probability", "Revise vectors, matrices, eigenvalues, and probability distributions."),
-        ("Python for Data Science", "Master NumPy, Pandas, and Matplotlib for data manipulation and analysis."),
-        ("Machine Learning (Scikit-learn)", "Study supervised & unsupervised algorithms with practical projects."),
-        ("Deep Learning", "Explore neural networks with TensorFlow or PyTorch."),
-        ("Statistics & Statistical Modeling", "Focus on hypothesis testing, regression, and Bayesian thinking."),
-        ("Natural Language Processing", "Learn text processing, transformers, and the Hugging Face ecosystem."),
-        ("Data Visualization & Dashboards", "Build interactive dashboards with Plotly, Streamlit, or Tableau."),
+        "machine learning", "data science", "python", "deep learning",
+        "neural", "nlp", "statistics", "tensorflow", "pytorch",
+        "data analysis", "artificial intelligence",
     ],
     ("DSI", "CIR"): [
-        ("Network Protocols & Architecture", "Study the OSI model, TCP/IP stack, DNS, DHCP, HTTP/S, and routing."),
-        ("Linux Administration & Bash Scripting", "Automate tasks, manage services, and harden Linux systems."),
-        ("Ethical Hacking & CTF Challenges", "Practice on platforms like HackTheBox or TryHackMe."),
-        ("Cryptography & Secure Coding", "Learn encryption algorithms, TLS/SSL, and secure development practices."),
-        ("Incident Response & Forensics", "Detect, contain, and investigate security incidents effectively."),
-        ("Virtualization & Cloud Security", "Understand VMware, Docker, and cloud security best practices (AWS/Azure)."),
-        ("Security Certifications", "Aim for CompTIA Security+, CEH, or OSCP to validate your skills."),
+        "security", "hacking", "network", "linux", "cyber", "cryptography",
+        "penetration", "forensics", "ethical", "comptia",
     ],
     ("CIR", "IADATA"): [
-        ("Python for Machine Learning", "Learn ML-focused Python: NumPy, Pandas, Scikit-learn, and Jupyter."),
-        ("Linear Algebra & Statistics", "Build the math foundation: vectors, matrices, probability distributions."),
-        ("Machine Learning Fundamentals", "Study classification, regression, clustering, and model evaluation."),
-        ("Deep Learning & Neural Networks", "Explore CNNs, RNNs, and transformers with PyTorch or TensorFlow."),
-        ("Data Analysis & Visualization", "Practice EDA, data cleaning, and storytelling with data."),
-        ("Big Data Processing", "Get familiar with Spark, Hadoop, or cloud data platforms."),
-        ("Research Methods in AI", "Learn to read papers, reproduce experiments, and benchmark models."),
+        "machine learning", "data science", "python", "deep learning",
+        "neural", "statistics", "tensorflow", "pytorch", "data analysis",
+        "artificial intelligence",
     ],
     ("CIR", "DSI"): [
-        ("Software Engineering Principles", "Study clean code, SOLID design patterns, and software architecture."),
-        ("Full-Stack Web Development", "Learn HTML/CSS/JavaScript on the front end and Node.js/Django on the back."),
-        ("Database Design & SQL", "Practice schema design, normalization, query optimization, and ORM usage."),
-        ("Object-Oriented Programming", "Deepen OOP skills in Python, Java, or C++ with design patterns."),
-        ("API Design & REST Services", "Build and consume RESTful APIs; study OpenAPI/Swagger specs."),
-        ("Mobile Development", "Build cross-platform apps with Flutter or React Native."),
-        ("Cloud Computing & DevOps", "Get started with AWS/Azure/GCP — focus on deployment, storage, and CI/CD."),
+        "web", "javascript", "react", "java", "sql", "database", "mobile",
+        "flutter", "backend", "fullstack", "devops", "software", "django",
+        "spring", "node",
     ],
 }
+
+def get_courses_for_gap(predicted, preferred, n=8):
+    keywords = GAP_KEYWORDS.get((predicted, preferred), [])
+    if not keywords:
+        return pd.DataFrame()
+    mask = COURSES_DF["title_lower"].str.contains("|".join(keywords), na=False)
+    matched = COURSES_DF[mask].copy()
+    matched = matched.sort_values("rating", ascending=False)
+    return matched.head(n)
 
 # ── Semester definitions (key → display label) ─────────────────────────────────
 SEMESTERS = {
@@ -404,7 +398,6 @@ if submitted:
 
     st.markdown("---")
 
-    # ── Branch result card (light bg + dark text — no color conflict) ─────────
     st.markdown(
         f"""
         <div class="result-card {css_cls}">
@@ -417,7 +410,6 @@ if submitted:
     )
     st.markdown(meta["description"])
 
-    # ── Confidence bars ───────────────────────────────────────────────────────
     st.markdown("---")
     st.markdown("#### Model Confidence")
     sorted_preds = sorted(zip(classes, probabilities), key=lambda x: -x[1])
@@ -441,7 +433,6 @@ if submitted:
             unsafe_allow_html=True,
         )
 
-    # ── Preferred branch comparison ───────────────────────────────────────────
     st.markdown("---")
     if prediction == preferred_branch:
         st.success(
@@ -455,14 +446,22 @@ if submitted:
             f"Your grades point toward **{prediction}**, but your preferred branch is "
             f"**{preferred_branch}**. Here are the courses we recommend to bridge that gap:"
         )
-        courses = COURSE_RECOMMENDATIONS.get((prediction, preferred_branch), [])
-        if courses:
-            for i, (title, desc) in enumerate(courses, start=1):
-                with st.expander(f"{i}.  {title}"):
-                    st.markdown(desc)
+        courses = get_courses_for_gap(prediction, preferred_branch)
+        if not courses.empty:
+            udemy_base = "https://www.udemy.com"
+            for i, row in enumerate(courses.itertuples(), start=1):
+                course_url = udemy_base + row.url if str(row.url).startswith("/") else row.url
+                with st.expander(f"{i}.  {row.title}"):
+                    col_img, col_info = st.columns([1, 3])
+                    with col_img:
+                        st.image(row.image, use_container_width=True)
+                    with col_info:
+                        st.markdown(f"**Rating:** {row.rating:.2f} ⭐  |  **Reviews:** {int(row.num_reviews):,}  |  **Duration:** {row.duration}")
+                        st.markdown(f"**Lectures:** {int(row.num_published_lectures)}  |  **Last updated:** {str(row.last_update_date)[:10]}")
+                        st.markdown(f"[Open on Udemy]({course_url})", unsafe_allow_html=False)
+        else:
+            st.info("No matching courses found in the catalogue.")
 
-    # ── Clean up temp files left by exploration ───────────────────────────────
-    import os
     for tmp in ("_temp_cols.json", "_temp_cols2.json",
                 "_temp_info.json", "_temp_indexed_cols.json"):
         if os.path.exists(tmp):

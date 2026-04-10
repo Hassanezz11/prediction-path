@@ -8,6 +8,7 @@ Strategy:
   - Handles class imbalance (CIR=38, DSI=74, IADATA=68) with balanced weights.
   - Uses all 82 features (the averaging approach loses discriminative signal).
 """
+import re
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, StandardScaler
@@ -116,6 +117,14 @@ RENAME_MAP = {
 # ── Load & clean ───────────────────────────────────────────────────────────────
 df = pd.read_excel("IIR_Dataset_Complet_S1_S7.xlsx", header=1)
 print(f"Loaded {len(df)} rows, {len(df.columns)} columns.")
+
+# Normalize float-formatted coefficients: "(coef 2.0)" -> "(coef 2)"
+def _norm_coef(col):
+    if not isinstance(col, str):
+        return col
+    return re.sub(r'\(coef (\d+)\.0\)', lambda m: f'(coef {int(m.group(1))})', col)
+
+df.columns = [_norm_coef(c) for c in df.columns]
 df.rename(columns=RENAME_MAP, inplace=True)
 df.drop(columns=["ID", "Nom", "Filière", "Domaine", "Carrière"], errors="ignore", inplace=True)
 before = len(df)

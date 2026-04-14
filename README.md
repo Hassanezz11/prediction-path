@@ -123,4 +123,7 @@ For questions or suggestions, please open an issue on GitHub.
 ---
 
 *Empowering CS students to make informed career decisions through data-driven insights!* 🚀
-
+## Internship/Jobs sites
+Rekrute.com — Moroccan job portal, scrapable with BS4
+Emploi.ma — Moroccan portal, scrapable with BS4
+Curated scholarship database — reliable static list of real programs (Campus France, DAAD, Erasmus, Fulbright) since scholarship pages change layout constantly

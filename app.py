@@ -6,6 +6,7 @@ import os
 import io
 import requests
 from pypdf import PdfReader
+from scrapers import recommend_opportunities, to_dataframe
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -374,7 +375,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Top-level tabs ────────────────────────────────────────────────────────────
-tab_grades, tab_cv = st.tabs(["Grade Predictor", "CV Analyzer"])
+tab_grades, tab_cv, tab_opps = st.tabs(["Grade Predictor", "CV Analyzer", "Stages & Bourses"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — Grade Predictor
@@ -546,3 +547,107 @@ with tab_cv:
                     st.error("Cannot connect to Ollama. Make sure it is running (`ollama serve`) and the model is pulled (`ollama pull llama3.2`).")
                 except Exception as e:
                     st.error(f"Error: {e}")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 3 — Stages & Bourses
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_opps:
+    st.markdown('<p class="section-label">Stages & Bourses recommandés</p>', unsafe_allow_html=True)
+    st.write(
+        "Sélectionne ta branche et entre ta moyenne — l'application recherche les "
+        "opportunités correspondant à ton profil en temps réel."
+    )
+
+    col_branch, col_gpa = st.columns([1, 1])
+    with col_branch:
+        opp_branch = st.selectbox(
+            "Branche cible",
+            options=["IADATA", "DSI", "CIR"],
+            format_func=lambda b: f"{b} — {BRANCH_META[b]['full']}",
+            key="opp_branch",
+        )
+    with col_gpa:
+        opp_gpa = st.number_input(
+            "Moyenne générale (/ 20)",
+            min_value=0.0, max_value=20.0,
+            value=13.0, step=0.25,
+            key="opp_gpa",
+        )
+
+    if st.button("Rechercher les opportunités", type="primary", use_container_width=True):
+        with st.spinner("Recherche en cours sur Rekrute.ma et la base de bourses..."):
+            results = recommend_opportunities(
+                predicted_branch=opp_branch,
+                gpa=opp_gpa,
+            )
+
+        stages       = results["stages"]
+        scholarships = results["scholarships"]
+
+        # ── Internships ───────────────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown("### Stages trouvés")
+
+        if stages:
+            for opp in stages:
+                with st.expander(f"**{opp.title}** — {opp.company}  |  {opp.location}"):
+                    col_info, col_link = st.columns([3, 1])
+                    with col_info:
+                        st.markdown(f"**Source :** {opp.source}")
+                        if opp.description:
+                            st.markdown(f"**Description :** {opp.description}")
+                        if opp.tags:
+                            st.markdown(
+                                " ".join(
+                                    f'<span style="background:#1e3a5f;color:#93c5fd;'
+                                    f'padding:2px 8px;border-radius:99px;font-size:0.78rem;">'
+                                    f'{t}</span>'
+                                    for t in opp.tags
+                                ),
+                                unsafe_allow_html=True,
+                            )
+                    with col_link:
+                        st.markdown(f"[Voir l'offre]({opp.url})", unsafe_allow_html=False)
+        else:
+            st.info(
+                "Aucun stage trouvé en temps réel (site potentiellement inaccessible). "
+                "Essaie directement sur [Rekrute.ma](https://www.rekrute.com) "
+                f"avec le mot-clé **{opp_branch.lower()}**."
+            )
+
+        # ── Scholarships ──────────────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown("### Bourses disponibles pour ton profil")
+
+        if scholarships:
+            for opp in scholarships:
+                css_color = {"IADATA": "#0c1e3d", "DSI": "#0a2218", "CIR": "#2c0b0b"}.get(opp_branch, "#1e293b")
+                border    = {"IADATA": "#3b82f6", "DSI": "#22c55e",  "CIR": "#f87171"}.get(opp_branch, "#64748b")
+                st.markdown(
+                    f"""
+                    <div style="background:{css_color};border-left:5px solid {border};
+                                border-radius:10px;padding:18px 22px;margin-bottom:10px;">
+                      <div style="font-size:1.05rem;font-weight:700;color:#f1f5f9;">
+                        {opp.title}
+                      </div>
+                      <div style="color:#94a3b8;font-size:0.88rem;margin:4px 0;">
+                        {opp.company} &nbsp;·&nbsp; {opp.location}
+                        &nbsp;·&nbsp; <strong style="color:#fbbf24;">Deadline :</strong> {opp.deadline}
+                      </div>
+                      <div style="color:#cbd5e1;font-size:0.9rem;margin-top:8px;">
+                        {opp.description}
+                      </div>
+                      <a href="{opp.url}" target="_blank"
+                         style="display:inline-block;margin-top:10px;color:#60a5fa;
+                                font-size:0.85rem;text-decoration:none;">
+                        Postuler / En savoir plus →
+                      </a>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.info(
+                f"Aucune bourse trouvée pour une moyenne de {opp_gpa:.2f}/20. "
+                "Essaie d'augmenter ta moyenne ou change de branche."
+            )

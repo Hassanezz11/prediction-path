@@ -401,26 +401,20 @@ with tab_grades:
 
         st.markdown('<p class="section-label" style="margin-top:20px;">Module Grades — out of 20</p>', unsafe_allow_html=True)
 
-        tab_labels = [f"S{i}" for i in range(1, 8)]
-        tabs = st.tabs(tab_labels)
         grade_inputs: dict[str, float] = {}
-
-        for tab_obj, (sem_key, sem_info) in zip(tabs, SEMESTERS.items()):
-            with tab_obj:
-                st.caption(sem_info["title"])
-                modules = sem_info["modules"]
-                mid = (len(modules) + 1) // 2
-                col_left, col_right = st.columns(2)
-                for idx, (feat_key, label, coef) in enumerate(modules):
-                    col = col_left if idx < mid else col_right
-                    with col:
+        for sem_key, sem_info in SEMESTERS.items():
+            with st.expander(f"**{sem_key}** — {sem_info['title']}", expanded=(sem_key == "S7")):
+                cols = st.columns(3)
+                for idx, (feat_key, label, coef) in enumerate(sem_info["modules"]):
+                    with cols[idx % 3]:
                         grade_inputs[feat_key] = st.number_input(
-                            f"{label}  *(coef {coef})*",
+                            label,
                             min_value=0.0,
                             max_value=20.0,
                             value=12.0,
                             step=0.25,
                             key=feat_key,
+                            help=f"Coefficient : {coef}",
                         )
 
         st.markdown("")

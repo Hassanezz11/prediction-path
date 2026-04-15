@@ -1,129 +1,82 @@
-# 🎓 CS Student Career Predictor
+# CS Student Career Platform
 
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
-[![Streamlit](https://img.shields.io/badge/Streamlit-1.0%2B-red.svg)](https://streamlit.io/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+This repository now contains a full web platform around the existing career prediction model:
 
-A machine learning-powered web application that predicts career paths for Computer Science students based on their academic performance, skills, and personal attributes. Built with Streamlit and scikit-learn.
+- `backend/` contains the FastAPI backend, database models, auth, admin routes, and static SPA frontend
+- `app.py` remains as the original Streamlit prototype
+- the existing model files and scraper logic are reused by the new backend services
 
-## 🌟 Features
+## Product Capabilities
 
-- **Intelligent Prediction**: Uses Gradient Boosting Classifier to predict career branches (AI, Cyber Security, Development)
-- **Interactive Web App**: Clean, user-friendly interface built with Streamlit
-- **Data-Driven Insights**: Based on comprehensive student data analysis
-- **Real-time Results**: Instant predictions with detailed explanations
-- **Career Guidance**: Provides specific career recommendations for each branch
+- student login with persistent history
+- admin login with student directory and student detail view
+- grade-based branch prediction stored in the database
+- CV upload with optional Ollama-powered analysis
+- internship and scholarship search history
+- polished landing page and role-based dashboards
 
-## 📋 What the App Does
+## Stack
 
-This application helps Computer Science students understand their potential career trajectories by analyzing their:
+- FastAPI
+- SQLAlchemy
+- SQLite by default for local development, PostgreSQL-compatible via `DATABASE_URL`
+- Static frontend served by FastAPI
+- Existing scikit-learn model artifacts for branch prediction
 
-- Academic scores and performance
-- Technical skills and competencies
-- Project experience and internships
-- Personal attributes and interests
+## Run Locally
 
-The model predicts one of three main career branches:
-- 🤖 **AI**: Data Science, Machine Learning, Computer Vision, NLP
-- 🔒 **Cyber Security**: Ethical Hacking, Security Analysis, Digital Forensics
-- 💻 **Development**: Software Engineering, Web Development, DevOps
-
-## 🚀 Installation & Setup
-
-Follow these steps to run the application locally:
-
-### Prerequisites
-
-- Python 3.8 or higher
-- Git
-
-### Step 1: Clone the Repository
+1. Create and activate a virtual environment.
 
 ```bash
-git clone https://github.com/Hassanezz11/prediction-path.git
-cd prediction-path
+python -m venv .venv
+.venv\Scripts\activate
 ```
 
-### Step 2: Create Virtual Environment
-
-```bash
-# On Windows
-python -m venv myenv
-myenv\Scripts\activate
-
-# On macOS/Linux
-# python -m venv myenv
-# source myenv/bin/activate
-```
-
-### Step 3: Install Dependencies
+2. Install dependencies.
 
 ```bash
 pip install -r requirements.txt
 ```
 
-If `requirements.txt` doesn't exist, install these packages manually:
+3. Seed an initial admin account.
 
 ```bash
-pip install streamlit pandas numpy scikit-learn joblib
+python -m backend.seed
 ```
 
-### Step 4: Train the Model (Optional)
+Default seeded admin credentials:
 
-If you want to retrain the model with the latest data:
+- email: `admin@example.com`
+- password: `Admin12345!`
+
+4. Start the platform.
 
 ```bash
-python train.py
+uvicorn backend.main:app --reload
+.\myenv\Scripts\python.exe -m backend.seed
+.\myenv\Scripts\python.exe -m uvicorn backend.main:app --reload
 ```
 
-This will generate the model files (`CS_students_career_predictor.pkl` and `model_metadata.pkl`).
+5. Open `http://127.0.0.1:8000`
 
-### Step 5: Run the Application
+## Environment Variables
+
+- `DATABASE_URL`: optional SQLAlchemy connection string
+- `SECRET_KEY`: token signing secret
+- `UPLOAD_DIR`: directory for stored CV files
+- `OLLAMA_URL`: CV analysis endpoint, default `http://localhost:11434/api/generate`
+- `DEFAULT_OLLAMA_MODEL`: default CV analysis model
+
+## Tests
 
 ```bash
-streamlit run app.py
-.\myenv\Scripts\python.exe -m streamlit run app.py
+pytest
 ```
 
-The app will open in your default web browser at `http://localhost:8501`.
+The tests stub the model, CV analysis, and opportunity search flows so auth, persistence, and admin aggregation can be verified without external services.
 
-## 📊 Dataset
+## Notes
 
-The application uses `cs_students_IIR_modules.xlsx` containing anonymized student data with features like:
-- Academic scores
-- Technical skills ratings
-- Project experience
-- Internship history
-- Personal attributes
-
-## 🛠️ Technologies Used
-
-- **Streamlit**: Web application framework
-- **scikit-learn**: Machine learning algorithms
-- **pandas**: Data manipulation and analysis
-- **NumPy**: Numerical computations
-- **joblib**: Model serialization
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 📞 Contact
-
-For questions or suggestions, please open an issue on GitHub.
-
----
-
-*Empowering CS students to make informed career decisions through data-driven insights!* 🚀
-## Internship/Jobs sites
-Rekrute.com — Moroccan job portal, scrapable with BS4
-Emploi.ma — Moroccan portal, scrapable with BS4
-Curated scholarship database — reliable static list of real programs (Campus France, DAAD, Erasmus, Fulbright) since scholarship pages change layout constantly
+- The new frontend is served from `backend/static/`.
+- The old Streamlit prototype in `app.py` was left in place as a legacy reference.
+- For production, point `DATABASE_URL` at PostgreSQL and replace the default `SECRET_KEY`.

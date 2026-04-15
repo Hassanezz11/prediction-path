@@ -76,15 +76,15 @@ class Opportunity:
 
     def to_dict(self) -> dict:
         return {
-            "Titre":       self.title,
-            "Entreprise":  self.company,
-            "Lieu":        self.location,
-            "Type":        self.kind,
-            "Source":      self.source,
-            "Deadline":    self.deadline,
-            "Description": self.description,
-            "URL":         self.url,
-            "Tags":        ", ".join(self.tags),
+            "title":       self.title,
+            "company":     self.company,
+            "location":    self.location,
+            "kind":        self.kind,
+            "source":      self.source,
+            "deadline":    self.deadline,
+            "description": self.description,
+            "url":         self.url,
+            "tags":        self.tags,
         }
 
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
